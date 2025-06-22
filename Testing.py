@@ -6,6 +6,8 @@ import time
 import os
 import pandas as pd
 import yfinance as yf
+from typing import List
+import requests
 
 
 
@@ -80,6 +82,69 @@ def download_stocks_csv(download_dir='downloads/'):
         # Close the browser
         driver.quit()
 
+def get_moving_avg(tickers: List[str], batch_size=5, sleep=2) -> pd.DataFrame:
+    """
+    Fetches 50, 100, 200-day moving averages and current price
+    for a list of tickers using batched yfinance.download calls.
+
+    Args:
+        tickers (List[str]): List of ticker symbols.
+        batch_size (int): Number of tickers per request batch.
+        sleep (int): Seconds to wait between each batch (to avoid rate-limiting).
+
+    Returns:
+        pd.DataFrame: A DataFrame with Symbol, 50/100/200 MAs, and Current Price.
+    """
+    results = []
+
+    for i in range(0, len(tickers), batch_size):
+        batch = tickers[i:i + batch_size]
+        print(f"Downloading batch {i // batch_size + 1} / {len(tickers) // batch_size + 1}: {batch}")
+
+        try:
+            data = yf.download(
+                tickers=batch,
+                period="220d",
+                interval="1d",
+                group_by="ticker",
+                threads=False,
+                progress=False
+            )
+        except Exception as e:
+            print(f"Batch failed for {batch}: {e}")
+            time.sleep(sleep)
+            continue
+
+        for symbol in batch:
+            try:
+                # Handle single ticker format
+                symbol_data = data if len(batch) == 1 else data[symbol]
+                symbol_data = symbol_data.dropna(subset=["Close"])
+
+                if len(symbol_data) < 200:
+                    continue
+
+                symbol_data['50_MA'] = symbol_data['Close'].rolling(50).mean()
+                symbol_data['100_MA'] = symbol_data['Close'].rolling(100).mean()
+                symbol_data['200_MA'] = symbol_data['Close'].rolling(200).mean()
+
+                latest = symbol_data.iloc[-1]
+
+                results.append({
+                    "Symbol": symbol,
+                    "50_day_MA": latest["50_MA"],
+                    "100_day_MA": latest["100_MA"],
+                    "200_day_MA": latest["200_MA"],
+                    "Current Price": latest["Close"]
+                })
+
+            except Exception as e:
+                print(f"Failed to process {symbol}: {e}")
+
+        time.sleep(sleep)  # Avoid rate limits
+
+    return pd.DataFrame(results)
+
 def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
     """
     Reads the CSV file in the fixed download directory, filters stocks by market cap,
@@ -137,15 +202,28 @@ def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
     print(f"Affordability threshold: {last_sale_threshold:,.0f} $$$")
     print(f"Remaining rows: {len(df)}")
 
-    #   now with these guys, lets use the batch function to get the moving averages, to filter even deeper.
-    #   And's once we have only few left, we can then loop to get options information
+    df_ma = get_moving_avg(df['Symbol'].tolist())
+    df = pd.merge(df, df_ma, on='Symbol', how='left')
 
+    print(df)
 
 if RUN_download_stocks:
     download_stocks_csv()
 
 if RUN_filter_stocks:
-    read_and_filter_stocks(market_cap_threshold=250e9, last_sale_threshold=150)
+    #read_and_filter_stocks(market_cap_threshold=250e9, last_sale_threshold=150)
+    ticker = 'AAPL'  # Use any known good ticker
+
+    try:
+        print("Requesting historical data for:", ticker)
+        df = yf.download(ticker, period="5d", interval="1d", progress=True, threads=False)
+        print(df)
+        if df.empty:
+            print("⚠️ No data returned.")
+        else:
+            print("✅ Data returned successfully.")
+    except Exception as e:
+        print(f"❌ Exception occurred: {type(e).__name__}: {e}")
 
 
 
