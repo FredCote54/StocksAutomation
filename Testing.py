@@ -7,6 +7,11 @@ import os
 import pandas as pd
 import yfinance as yf
 
+
+
+RUN_download_stocks = False
+RUN_filter_stocks = True
+
 def download_stocks_csv(download_dir='downloads/'):
     """
     Automates the process of downloading the CSV file of all stocks from the Nasdaq screener.
@@ -74,8 +79,6 @@ def download_stocks_csv(download_dir='downloads/'):
     finally:
         # Close the browser
         driver.quit()
-#Fred
-#download_stocks_csv()
 
 def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
     """
@@ -105,15 +108,15 @@ def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
     # Read the CSV into a DataFrame
     df = pd.read_csv(csv_file)
 
-    # Check the first few rows to understand the structure
-    print(df.head())
-
     # Rename the columns for easier access (if necessary)
     df.columns = [col.strip() for col in df.columns]  # Remove any extra whitespace from column names
 
     # Filter stocks based on Market Cap threshold
     df['Market Cap'] = pd.to_numeric(df['Market Cap'], errors='coerce')  # Convert to numeric (handling errors)
     df = df[df['Market Cap'] >= market_cap_threshold]
+
+    print(f"Market Cap filter threshold: {market_cap_threshold:,.0f} $$$")
+    print(f"Remaining rows: {len(df)}")
 
     # Filter out stocks that contain "^" in the symbol
     df = df[~df['Symbol'].str.contains(r'\^')]
@@ -128,61 +131,21 @@ def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
     # Calculate the indicator for "Last Sale" being smaller than the threshold
     df['Affordable Indicator'] = df['Last Sale'].apply(lambda x: 1 if x < last_sale_threshold else 0)
 
-    # Create an empty list to store the moving averages
-    moving_averages = []
+    # Filter stocks based on Affordability
+    df = df[df['Affordable Indicator'] == 1]
 
-    # Loop through each stock symbol in the DataFrame and get moving averages
-    for symbol in df['Symbol']:
-        stock = yf.Ticker(symbol)  # Fetch stock data using yfinance
-        data = stock.history(period="200d")  # Get 1 year of historical data
+    print(f"Affordability threshold: {last_sale_threshold:,.0f} $$$")
+    print(f"Remaining rows: {len(df)}")
 
-        # Calculate moving averages
-        data['50_day_MA'] = data['Close'].rolling(window=50).mean()
-        data['100_day_MA'] = data['Close'].rolling(window=100).mean()
-        data['200_day_MA'] = data['Close'].rolling(window=200).mean()
+    #   now with these guys, lets use the batch function to get the moving averages, to filter even deeper.
+    #   And's once we have only few left, we can then loop to get options information
 
-        # Calculate the 20-day simple moving average (SMA) and standard deviation
-        data['SMA'] = data['Close'].rolling(window=20).mean()
-        data['STD'] = data['Close'].rolling(window=20).std()
 
-        # Calculate the lower Bollinger Band (support level)
-        data['Lower Band'] = data['SMA'] - (2 * data['STD'])
+if RUN_download_stocks:
+    download_stocks_csv()
 
-        # Get the last value of the lower band (support price)
-        support_price = data['Lower Band'].iloc[-1]
-
-        # Extract the most recent values of the moving averages
-        latest_data = data.iloc[-1]  # Get the last row (most recent data)
-        current_price = stock.history(period="1d")['Close'].iloc[-1] # Get the current price
-
-        moving_averages.append({
-            'Symbol': symbol,
-            '50_day_MA': latest_data['50_day_MA'],
-            '100_day_MA': latest_data['100_day_MA'],
-            '200_day_MA': latest_data['200_day_MA'],
-            'Current Price': current_price,
-            'Support Price': support_price
-        })
-
-    # Convert the list of moving averages into a DataFrame
-    ma_df = pd.DataFrame(moving_averages)
-
-    # Merge the moving averages DataFrame with the original DataFrame
-    result_df = pd.merge(df, ma_df, on='Symbol', how='left')
-
-    # Filter out stocks where the current price is not greater than all the moving averages
-    result_df = result_df[
-        (result_df['Current Price'] > result_df['50_day_MA']) &
-        (result_df['Current Price'] > result_df['100_day_MA']) &
-        (result_df['Current Price'] > result_df['200_day_MA'])
-    ]
-
-    # Save the final DataFrame to CSV
-    result_df.to_csv('filtered_stocks.csv', index=False)
-    print("Data saved to 'filtered_stocks.csv'")
-    print(str(len(result_df)) + ' stocks were found!')
-
-read_and_filter_stocks(market_cap_threshold=250e9, last_sale_threshold=150)
+if RUN_filter_stocks:
+    read_and_filter_stocks(market_cap_threshold=250e9, last_sale_threshold=150)
 
 
 
