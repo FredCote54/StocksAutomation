@@ -5,14 +5,25 @@ from selenium.webdriver.support import expected_conditions as ec
 import time
 import os
 import pandas as pd
-import yfinance as yf
-from typing import List
 import requests
+from bs4 import BeautifulSoup
+import random
 
+
+
+
+
+#############################################################################
+####################        CHOOSE PARAMETERS       #########################
+#############################################################################
 
 
 RUN_download_stocks = False
 RUN_filter_stocks = True
+RUN_testing = False
+
+#############################################################################
+#############################################################################
 
 def download_stocks_csv(download_dir='downloads/'):
     """
@@ -82,66 +93,64 @@ def download_stocks_csv(download_dir='downloads/'):
         # Close the browser
         driver.quit()
 
-def get_moving_avg(tickers: List[str], batch_size=5, sleep=2) -> pd.DataFrame:
-    """
-    Fetches 50, 100, 200-day moving averages and current price
-    for a list of tickers using batched yfinance.download calls.
+def get_moving_avg(tickers):
+    base_url = "https://www.barchart.com/stocks/quotes/{}/technical-analysis"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
-    Args:
-        tickers (List[str]): List of ticker symbols.
-        batch_size (int): Number of tickers per request batch.
-        sleep (int): Seconds to wait between each batch (to avoid rate-limiting).
-
-    Returns:
-        pd.DataFrame: A DataFrame with Symbol, 50/100/200 MAs, and Current Price.
-    """
+    delay_range = (1.5, 3.5)
     results = []
 
-    for i in range(0, len(tickers), batch_size):
-        batch = tickers[i:i + batch_size]
-        print(f"Downloading batch {i // batch_size + 1} / {len(tickers) // batch_size + 1}: {batch}")
-
+    for i, symbol in enumerate(tickers):
+        print(f"({i+1}/{len(tickers)}) Fetching {symbol}...")
+        url = base_url.format(symbol)
         try:
-            data = yf.download(
-                tickers=batch,
-                period="220d",
-                interval="1d",
-                group_by="ticker",
-                threads=False,
-                progress=False
-            )
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            wrapper = soup.find("div", class_="analysis-table-wrapper bc-table-wrapper")
+            if not wrapper:
+                print(f"⚠️ No analysis table found for {symbol}")
+                continue
+
+            table = wrapper.find("table")
+            if not table:
+                print(f"⚠️ No table found inside analysis wrapper for {symbol}")
+                continue
+
+            rows = table.find("tbody").find_all("tr")
+            data = {
+                "Symbol": symbol,
+                "MA_50": None,
+                "MA_100": None,
+                "MA_200": None
+            }
+
+            for row in rows:
+                cells = row.find_all("td")
+                if len(cells) >= 2:
+                    label = cells[0].text.strip()
+                    value = cells[1].text.strip().replace(",", "").replace("$", "")
+                    try:
+                        value = float(value)
+                    except ValueError:
+                        continue
+
+                    if "50-Day" in label:
+                        data["MA_50"] = value
+                    elif "100-Day" in label:
+                        data["MA_100"] = value
+                    elif "200-Day" in label:
+                        data["MA_200"] = value
+
+            results.append(data)
+
         except Exception as e:
-            print(f"Batch failed for {batch}: {e}")
-            time.sleep(sleep)
-            continue
+            print(f"❌ Failed to fetch {symbol}: {e}")
 
-        for symbol in batch:
-            try:
-                # Handle single ticker format
-                symbol_data = data if len(batch) == 1 else data[symbol]
-                symbol_data = symbol_data.dropna(subset=["Close"])
-
-                if len(symbol_data) < 200:
-                    continue
-
-                symbol_data['50_MA'] = symbol_data['Close'].rolling(50).mean()
-                symbol_data['100_MA'] = symbol_data['Close'].rolling(100).mean()
-                symbol_data['200_MA'] = symbol_data['Close'].rolling(200).mean()
-
-                latest = symbol_data.iloc[-1]
-
-                results.append({
-                    "Symbol": symbol,
-                    "50_day_MA": latest["50_MA"],
-                    "100_day_MA": latest["100_MA"],
-                    "200_day_MA": latest["200_MA"],
-                    "Current Price": latest["Close"]
-                })
-
-            except Exception as e:
-                print(f"Failed to process {symbol}: {e}")
-
-        time.sleep(sleep)  # Avoid rate limits
+        time.sleep(random.uniform(*delay_range))
 
     return pd.DataFrame(results)
 
@@ -207,23 +216,36 @@ def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
 
     print(df)
 
+    df = df[
+        (df['Current Price'] > df['50_MA']) &
+        (df['Current Price'] > df['100_MA']) &
+        (df['Current Price'] > df['200_MA'])
+    ]
+
+    print(f"Remaining rows after averages: {len(df)}")
+
+    return  df
+
+
 if RUN_download_stocks:
     download_stocks_csv()
 
 if RUN_filter_stocks:
-    #read_and_filter_stocks(market_cap_threshold=250e9, last_sale_threshold=150)
-    ticker = 'AAPL'  # Use any known good ticker
+    read_and_filter_stocks(250e9, 150)
 
-    try:
-        print("Requesting historical data for:", ticker)
-        df = yf.download(ticker, period="5d", interval="1d", progress=True, threads=False)
-        print(df)
-        if df.empty:
-            print("⚠️ No data returned.")
-        else:
-            print("✅ Data returned successfully.")
-    except Exception as e:
-        print(f"❌ Exception occurred: {type(e).__name__}: {e}")
+
+if RUN_testing:
+    base_url = "https://www.barchart.com/stocks/quotes/AAPL/overview"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    response = requests.get(base_url, headers=headers, timeout=10)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    table = soup.find("section", {"class": "technical-summary"})
+    print(soup)
+
+
 
 
 
