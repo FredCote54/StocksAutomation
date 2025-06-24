@@ -2,12 +2,13 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
-from selenium.webdriver.chrome.options import Options
+import re
 import time
 import os
 import pandas as pd
 import random
-
+from bs4 import BeautifulSoup
+import requests
 
 
 
@@ -92,17 +93,22 @@ def download_stocks_csv(download_dir='downloads/'):
         # Close the browser
         driver.quit()
 
-def get_moving_avg(tickers, headless=True):
-    delay_range = (2, 4)
-    options = Options()
-    if headless:
-        options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("window-size=1920,1080")
-    options.add_argument("user-agent=Mozilla/5.0")
 
-    driver = webdriver.Chrome(options=options)
+def extract_barchart_last_price(soup_text):
+    match = re.search(r'"lastPrice":"([\d.]+)"', soup_text)
+    if match:
+        return float(match.group(1))
+    else:
+        print("⚠️ dailyLastPrice not found in soup.")
+        return None
+
+
+def get_moving_avg(tickers):
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    delay_range = (1, 2.5)
+
     results = []
 
     for i, symbol in enumerate(tickers):
@@ -117,40 +123,42 @@ def get_moving_avg(tickers, headless=True):
         }
 
         try:
-            # Scrape technical analysis page
-            driver.get(f"https://www.barchart.com/stocks/quotes/{symbol}/technical-analysis")
-            time.sleep(random.uniform(*delay_range))
+            # Moving Averages from Barchart
+            url_bc = f"https://www.barchart.com/stocks/quotes/{symbol}/technical-analysis"
+            resp_bc = requests.get(url_bc, headers=headers, timeout=10)
+            soup_bc = BeautifulSoup(resp_bc.text, "html.parser")
 
-            rows = driver.find_elements(By.CSS_SELECTOR, ".analysis-table-wrapper table tbody tr")
-            for row in rows:
-                cols = row.find_elements(By.TAG_NAME, "td")
-                if len(cols) >= 2:
-                    period = cols[0].text.strip()
-                    value = cols[1].text.strip().replace(",", "")
-                    try:
-                        value = float(value)
-                    except ValueError:
-                        continue
+            table_wrapper = soup_bc.find("div", class_="analysis-table-wrapper")
+            table = table_wrapper.find("table") if table_wrapper else None
+            if table:
+                rows = table.find_all("tr")
+                for row in rows:
+                    cols = row.find_all("td")
+                    if len(cols) >= 2:
+                        period = cols[0].text.strip()
+                        value = cols[1].text.strip().replace(",", "")
+                        try:
+                            value = float(value)
+                        except ValueError:
+                            continue
+                        if "50-Day" in period:
+                            data["MA_50"] = value
+                        elif "100-Day" in period:
+                            data["MA_100"] = value
+                        elif "200-Day" in period:
+                            data["MA_200"] = value
 
-                    if "50-Day" in period:
-                        data["MA_50"] = value
-                    elif "100-Day" in period:
-                        data["MA_100"] = value
-                    elif "200-Day" in period:
-                        data["MA_200"] = value
-
-            # Scrape overview page for Current Price
-            driver.get(f"https://www.barchart.com/stocks/quotes/{symbol}/overview")
-            time.sleep(random.uniform(*delay_range))
-            price_span = driver.find_element(By.CSS_SELECTOR, ".pricechangerow .last-change")
-            data["Current Price"] = float(price_span.text.replace(",", ""))
+            soup_text = resp_bc.text
+            last_price = extract_barchart_last_price(soup_text)
+            if last_price:
+                data["Current Price"] = float(last_price)
 
         except Exception as e:
             print(f"❌ Failed to fetch {symbol}: {e}")
 
         results.append(data)
+        time.sleep(random.uniform(*delay_range))
 
-    driver.quit()
     return pd.DataFrame(results)
 
 def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
@@ -234,4 +242,4 @@ if RUN_filter_stocks:
 
 
 if RUN_testing:
-    print('fern')
+    print('Fern')
