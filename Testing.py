@@ -2,11 +2,10 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
+from selenium.webdriver.chrome.options import Options
 import time
 import os
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
 import random
 
 
@@ -93,65 +92,65 @@ def download_stocks_csv(download_dir='downloads/'):
         # Close the browser
         driver.quit()
 
-def get_moving_avg(tickers):
-    base_url = "https://www.barchart.com/stocks/quotes/{}/technical-analysis"
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+def get_moving_avg(tickers, headless=True):
+    delay_range = (2, 4)
+    options = Options()
+    if headless:
+        options.add_argument("--headless")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("window-size=1920,1080")
+    options.add_argument("user-agent=Mozilla/5.0")
 
-    delay_range = (1.5, 3.5)
+    driver = webdriver.Chrome(options=options)
     results = []
 
     for i, symbol in enumerate(tickers):
         print(f"({i+1}/{len(tickers)}) Fetching {symbol}...")
-        url = base_url.format(symbol)
+
+        data = {
+            "Symbol": symbol,
+            "MA_50": None,
+            "MA_100": None,
+            "MA_200": None,
+            "Current Price": None
+        }
+
         try:
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
+            # Scrape technical analysis page
+            driver.get(f"https://www.barchart.com/stocks/quotes/{symbol}/technical-analysis")
+            time.sleep(random.uniform(*delay_range))
 
-            wrapper = soup.find("div", class_="analysis-table-wrapper bc-table-wrapper")
-            if not wrapper:
-                print(f"⚠️ No analysis table found for {symbol}")
-                continue
-
-            table = wrapper.find("table")
-            if not table:
-                print(f"⚠️ No table found inside analysis wrapper for {symbol}")
-                continue
-
-            rows = table.find("tbody").find_all("tr")
-            data = {
-                "Symbol": symbol,
-                "MA_50": None,
-                "MA_100": None,
-                "MA_200": None
-            }
-
+            rows = driver.find_elements(By.CSS_SELECTOR, ".analysis-table-wrapper table tbody tr")
             for row in rows:
-                cells = row.find_all("td")
-                if len(cells) >= 2:
-                    label = cells[0].text.strip()
-                    value = cells[1].text.strip().replace(",", "").replace("$", "")
+                cols = row.find_elements(By.TAG_NAME, "td")
+                if len(cols) >= 2:
+                    period = cols[0].text.strip()
+                    value = cols[1].text.strip().replace(",", "")
                     try:
                         value = float(value)
                     except ValueError:
                         continue
 
-                    if "50-Day" in label:
+                    if "50-Day" in period:
                         data["MA_50"] = value
-                    elif "100-Day" in label:
+                    elif "100-Day" in period:
                         data["MA_100"] = value
-                    elif "200-Day" in label:
+                    elif "200-Day" in period:
                         data["MA_200"] = value
 
-            results.append(data)
+            # Scrape overview page for Current Price
+            driver.get(f"https://www.barchart.com/stocks/quotes/{symbol}/overview")
+            time.sleep(random.uniform(*delay_range))
+            price_span = driver.find_element(By.CSS_SELECTOR, ".pricechangerow .last-change")
+            data["Current Price"] = float(price_span.text.replace(",", ""))
 
         except Exception as e:
             print(f"❌ Failed to fetch {symbol}: {e}")
 
-        time.sleep(random.uniform(*delay_range))
+        results.append(data)
 
+    driver.quit()
     return pd.DataFrame(results)
 
 def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
@@ -217,9 +216,9 @@ def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
     print(df)
 
     df = df[
-        (df['Current Price'] > df['50_MA']) &
-        (df['Current Price'] > df['100_MA']) &
-        (df['Current Price'] > df['200_MA'])
+        (df['Current Price'] > df['MA_50']) &
+        (df['Current Price'] > df['MA_100']) &
+        (df['Current Price'] > df['MA_200'])
     ]
 
     print(f"Remaining rows after averages: {len(df)}")
@@ -235,18 +234,4 @@ if RUN_filter_stocks:
 
 
 if RUN_testing:
-    base_url = "https://www.barchart.com/stocks/quotes/AAPL/overview"
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-    response = requests.get(base_url, headers=headers, timeout=10)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    table = soup.find("section", {"class": "technical-summary"})
-    print(soup)
-
-
-
-
-
-
+    print('fern')
