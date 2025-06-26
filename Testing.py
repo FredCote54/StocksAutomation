@@ -11,6 +11,7 @@ import random
 from bs4 import BeautifulSoup
 import requests
 import urllib.parse
+import math
 
 
 
@@ -21,8 +22,8 @@ import urllib.parse
 
 
 RUN_download_stocks = False
-RUN_filter_stocks = False
-RUN_testing = True
+RUN_filter_stocks = True
+RUN_testing = False
 
 #############################################################################
 #############################################################################
@@ -116,6 +117,9 @@ def get_moving_avg(tickers):
 
         data = {
             "Symbol": symbol,
+            "MA_20": None,
+            "HV_20": None,
+            "Floor": None,
             "MA_50": None,
             "MA_100": None,
             "MA_200": None,
@@ -128,25 +132,50 @@ def get_moving_avg(tickers):
             resp_bc = requests.get(url_bc, headers=headers, timeout=10)
             soup_bc = BeautifulSoup(resp_bc.text, "html.parser")
 
-            table_wrapper = soup_bc.find("div", class_="analysis-table-wrapper")
-            table = table_wrapper.find("table") if table_wrapper else None
-            if table:
-                rows = table.find_all("tr")
-                for row in rows:
-                    cols = row.find_all("td")
-                    if len(cols) >= 2:
-                        period = cols[0].text.strip()
-                        value = cols[1].text.strip().replace(",", "")
-                        try:
-                            value = float(value)
-                        except ValueError:
-                            continue
-                        if "50-Day" in period:
-                            data["MA_50"] = value
-                        elif "100-Day" in period:
-                            data["MA_100"] = value
-                        elif "200-Day" in period:
-                            data["MA_200"] = value
+            all_tables = soup_bc.find_all("div", class_="analysis-table-wrapper")
+
+            if len(all_tables) >= 1:
+                ma_table = all_tables[0].find("table")
+                if ma_table:
+                    rows = ma_table.find_all("tr")
+                    for row in rows:
+                        cols = row.find_all("td")
+                        if len(cols) >= 2:
+                            period = cols[0].text.strip()
+                            value = cols[1].text.strip().replace(",", "")
+                            try:
+                                value = float(value)
+                            except ValueError:
+                                continue
+                            if "20-Day" in period:
+                                data["MA_20"] = value
+                            elif "50-Day" in period:
+                                data["MA_50"] = value
+                            elif "100-Day" in period:
+                                data["MA_100"] = value
+                            elif "200-Day" in period:
+                                data["MA_200"] = value
+
+            if len(all_tables) >= 3:
+                hv_table = all_tables[2].find("table")
+                if hv_table:
+                    rows = hv_table.find_all("tr")
+                    for row in rows:
+                        cols = row.find_all("td")
+                        if len(cols) >= 2:
+                            period = cols[0].text.strip()
+                            value = cols[3].text.strip().replace("%", "")
+                            try:
+                                value = float(value)
+                            except ValueError:
+                                continue
+                            if "20-Day" in period:
+                                data["HV_20"] = value
+
+            # Compute the floor if both values are available
+            if data["MA_20"] and data["HV_20"]:
+                hv_daily = (data["HV_20"]/100) / math.sqrt(252)
+                data["Floor"] = round(data["MA_20"] * (1 - 2 * hv_daily), 2)
 
             soup_text = resp_bc.text
             last_price = extract_barchart_last_price(soup_text)
@@ -221,6 +250,7 @@ def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
     df_ma = get_moving_avg(df['Symbol'].tolist())
     df = pd.merge(df, df_ma, on='Symbol', how='left')
 
+    pd.set_option('display.max_columns', None)
     print(df)
 
     df = df[
@@ -232,7 +262,6 @@ def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
     print(f"Remaining rows after averages: {len(df)}")
 
     return  df
-
 
 def get_barchart_tokens():
     options = Options()
