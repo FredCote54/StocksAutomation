@@ -2,6 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
+from selenium.webdriver.chrome.options import Options
 import re
 import time
 import os
@@ -9,6 +10,7 @@ import pandas as pd
 import random
 from bs4 import BeautifulSoup
 import requests
+import urllib.parse
 
 
 
@@ -92,7 +94,6 @@ def download_stocks_csv(download_dir='downloads/'):
     finally:
         # Close the browser
         driver.quit()
-
 
 def extract_barchart_last_price(soup_text):
     match = re.search(r'"lastPrice":"([\d.]+)"', soup_text)
@@ -233,50 +234,87 @@ def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
     return  df
 
 
+def get_barchart_tokens():
+    options = Options()
+    # Avoid headless mode to ensure tokens load correctly
+    # options.add_argument("--headless")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--start-maximized")
+
+    driver = webdriver.Chrome(options=options)
+
+    driver.get("https://www.barchart.com/stocks/quotes/AAPL/options")
+    time.sleep(10)  # Wait to ensure all cookies are set
+
+    cookies = driver.get_cookies()
+    cookie_dict = {cookie['name']: cookie['value'] for cookie in cookies}
+
+    # Build cookie string starting at 'market'
+    cookie_items = []
+    market_found = False
+    for cookie in cookies:
+        if cookie['name'] == 'market':
+            market_found = True
+        if market_found:
+            cookie_items.append(f"{cookie['name']}={cookie['value']}")
+    cookie_str = "; ".join(cookie_items)
+
+    # Decode XSRF-TOKEN
+    xsrf_token_raw = cookie_dict.get('XSRF-TOKEN')
+    xsrf_token = urllib.parse.unquote(xsrf_token_raw) if xsrf_token_raw else None
+
+    driver.quit()
+
+    return cookie_str, xsrf_token
+
 if RUN_download_stocks:
     download_stocks_csv()
 
 if RUN_filter_stocks:
     read_and_filter_stocks(250e9, 150)
 
-
 if RUN_testing:
     print('Fern')
-    url = "https://www.barchart.com/proxies/core-api/v1/options/get"
-    params = {
-        "baseSymbol": "BABA",
-        "expirationDate": "2025-06-27",
-        "expirationType": "weekly",
-        "groupBy": "optionType",
-        "orderBy": "strikePrice",
-        "orderDir": "asc",
-        "optionsOverview": "true",
-        "raw": "1",
-        "fields": "symbol,baseSymbol,strikePrice,expirationDate,moneyness,bidPrice,midpoint,askPrice,lastPrice,priceChange,percentChange,volume,openInterest,openInterestChange,volatility,delta,optionType,daysToExpiration,tradeTime,averageVolatility,historicVolatility30d,baseNextEarningsDate,dividendExDate,baseTimeCode,expirationType,impliedVolatilityRank1y,symbolCode,symbolType"
+    cookie_str, token_str = get_barchart_tokens()
+    print(cookie_str)
+    print(token_str)
+    test = True
+    if test:
+        url = "https://www.barchart.com/proxies/core-api/v1/options/get"
+        params = {
+            "baseSymbol": "AAPL",
+            "expirationDate": "2025-06-27",
+            "expirationType": "weekly",
+            "groupBy": "optionType",
+            "orderBy": "strikePrice",
+            "orderDir": "asc",
+            "optionsOverview": "true",
+            "raw": "1",
+            "fields": "symbol,baseSymbol,strikePrice,expirationDate,moneyness,bidPrice,midpoint,askPrice,lastPrice,priceChange,percentChange,volume,openInterest,openInterestChange,volatility,delta,optionType,daysToExpiration,tradeTime,averageVolatility,historicVolatility30d,baseNextEarningsDate,dividendExDate,baseTimeCode,expirationType,impliedVolatilityRank1y,symbolCode,symbolType"
 
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Cookie":"market=eyJpdiI6InJiQng5Q3VQck1Dcm5EeXprS25MYnc9PSIsInZhbHVlIjoiZVBxaEZFVFFGOUpEL0xWOVlUV2JsaEdBRU9oMGVFVWZtUm4xU0tpbU9KSFhZNTdVMlZYZmF5UzBXeUdNU2c1aSIsIm1hYyI6IjU4Yjg2ODcyOWRiMDFjYzBkYTRmYWFkMWIzNDUxZjUyOTI2OWMwNzc2ZmYwOThkOGFhYzhjZTJhOGM4MjQxNmIiLCJ0YWciOiIifQ%3D%3D; bcFreeUserPageView=0; webinarClosed=249; laravel_token=eyJpdiI6IjNORkk2ajZaNzFkSWpMR0pOSUpwMHc9PSIsInZhbHVlIjoib3YyMU10WTd5RzBFRFhYVTFUZHFNaEdKM0pWT1hBUzVPYmZIbDhsdFFUa2FnSkxTWVZZbUpGZXNTTE5ienFqa2d3Yys4cjZoOTJuMmgyNkpWNzYxZERpMjc1eWVJVWUzckw1VEtmdXNYN05uazlnU3lPOEFPZXlDQ3NRVXlQZXo4S2pybkx5VnJGTXY2QUMraFhyaStZMUZNcGVsOEVyeUsyWVZxSWZXbGlTY1o2akZZdVZJRVJCcmNack94ZkYwam5TVlQrV1FKb2hTWmI5V21mVEtSQW10dHQxVjNKK3ZEYnE0bk5PTGJhdmExeUw4eVZSOEZPKzlxSXZZY3VQYkZKaDllbTMwRnNhWmYwVGQ3UUhZTnRKZmtVMlZFcWNhRVBhNU5CTlUzeGI2dUVDWGc0U1RCdW9LZWFRcjRvcmYiLCJtYWMiOiJkMGI5ZjZmYjFlMTgzMDBhZmU0ZTY5OThjYmNhZGViYjM1MzUyMWY1MzAzYmI5ZGUwMGJjNWY1NTkwMTdjMTc5IiwidGFnIjoiIn0%3D; XSRF-TOKEN=eyJpdiI6InlEcEVZeUt6dzdpU2hUTXkraE5lSVE9PSIsInZhbHVlIjoiZmtidWdPWEdOVGtOZWMwTTNUaVUxWmxnQXFsZkxzSS9rdWRucGw0ZE16SjdGWWVqazE5SnBJKytaTTVpVUlNRmZlN1JsL0Yvcis5UTlBdWlLWk1zRFdYR1hlNHFLV1YrbmtmdWFwQVo3SEc1bkUwdmJFcVlkcWZqVmhIcEVzRloiLCJtYWMiOiI3MDI5YzJjOWYwMTY0Y2RmNDI1MGVjNDkxMDk4OWUwYmJjNDlkNWI1M2U3OTQ0Nzc4MjdkYTI5NjU1NjdlNWMwIiwidGFnIjoiIn0%3D; laravel_session=eyJpdiI6ImN6SHJra0JwdTlaZVJ1aUxHVEJRcUE9PSIsInZhbHVlIjoiMGdGK2dqd2huclk0SStSaTZGZmp2V0FzWlBYVmhDMXJ1LzE5QXNNZFZZRU9IOWJJUUtyRUI3ZWp0cXBSaG45TWJyblpKTUtTaWxCMEg5MGZkeGx1aURMRmtaREU2T041aUk5YmxuUkd4NDRUS3BEalAvRmVnWkU1M3ZyYndvSGEiLCJtYWMiOiJlOTk5YjY0OGYzMWNhZDZjZDRiMzQ4NTNjMmY0ZjUxMTJmYTNlM2RjOTE2MzVhYzJiNWFlYjNmZGRmODRlODY4IiwidGFnIjoiIn0%3D",
-        "X-XSRF-TOKEN":"eyJpdiI6InlEcEVZeUt6dzdpU2hUTXkraE5lSVE9PSIsInZhbHVlIjoiZmtidWdPWEdOVGtOZWMwTTNUaVUxWmxnQXFsZkxzSS9rdWRucGw0ZE16SjdGWWVqazE5SnBJKytaTTVpVUlNRmZlN1JsL0Yvcis5UTlBdWlLWk1zRFdYR1hlNHFLV1YrbmtmdWFwQVo3SEc1bkUwdmJFcVlkcWZqVmhIcEVzRloiLCJtYWMiOiI3MDI5YzJjOWYwMTY0Y2RmNDI1MGVjNDkxMDk4OWUwYmJjNDlkNWI1M2U3OTQ0Nzc4MjdkYTI5NjU1NjdlNWMwIiwidGFnIjoiIn0="
-    }
+        }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Cookie":f"{cookie_str}",
+            "X-XSRF-TOKEN":f"{token_str}"
+        }
 
-    response = requests.get(url, headers=headers, params=params)
+        response = requests.get(url, headers=headers, params=params)
 
-    if response.ok:
-        data = response.json()
-        print("✅ Success! Keys in response:", data.keys())
-        puts = data["data"].get("Put", [])
+        if response.ok:
+            data = response.json()
+            print("✅ Success! Keys in response:", data.keys())
+            puts = data["data"].get("Put", [])
 
-        strike_to_find = "113.00"  # string, because strikePrice in your example is string
+            strike_to_find = "205.00"  # string, because strikePrice in your example is string
 
-        option_205_put = next((opt for opt in puts if opt.get("strikePrice") == strike_to_find), None)
+            option_205_put = next((opt for opt in puts if opt.get("strikePrice") == strike_to_find), None)
 
-        if option_205_put:
-            print("Bid:", option_205_put.get("bidPrice"))
-            print("Ask:", option_205_put.get("askPrice"))
+            if option_205_put:
+                print("Bid:", option_205_put.get("bidPrice"))
+                print("Ask:", option_205_put.get("askPrice"))
+            else:
+                print("Put option with strike 205 not found.")
         else:
-            print("Put option with strike 205 not found.")
-    else:
-        print(f"❌ Request failed: {response.status_code}")
-        print(response.text[:500])
+            print(f"❌ Request failed: {response.status_code}")
+            print(response.text[:500])
