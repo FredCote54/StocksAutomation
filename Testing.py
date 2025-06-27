@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 import requests
 import urllib.parse
 import math
+from tqdm import tqdm
 
 
 
@@ -190,12 +191,114 @@ def get_moving_avg(tickers):
 
     return pd.DataFrame(results)
 
-def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
+def get_barchart_tokens():
+    options = Options()
+    # Avoid headless mode to ensure tokens load correctly
+    # options.add_argument("--headless")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--start-maximized")
+
+    driver = webdriver.Chrome(options=options)
+
+    driver.get("https://www.barchart.com/stocks/quotes/AAPL/options")
+    time.sleep(10)  # Wait to ensure all cookies are set
+
+    cookies = driver.get_cookies()
+    cookie_dict = {cookie['name']: cookie['value'] for cookie in cookies}
+
+    # Build cookie string starting at 'market'
+    cookie_items = []
+    market_found = False
+    for cookie in cookies:
+        if cookie['name'] == 'market':
+            market_found = True
+        if market_found:
+            cookie_items.append(f"{cookie['name']}={cookie['value']}")
+    cookie_str = "; ".join(cookie_items)
+
+    # Decode XSRF-TOKEN
+    xsrf_token_raw = cookie_dict.get('XSRF-TOKEN')
+    xsrf_token = urllib.parse.unquote(xsrf_token_raw) if xsrf_token_raw else None
+
+    driver.quit()
+
+    return cookie_str, xsrf_token
+
+def get_barchart_put_options(symbol, expiration, cookie_str, token_str, target_strike=None):
+    url = "https://www.barchart.com/proxies/core-api/v1/options/get"
+    params = {
+        "baseSymbol": symbol,
+        "expirationDate": expiration,
+        "expirationType": "weekly",
+        "groupBy": "optionType",
+        "orderBy": "strikePrice",
+        "orderDir": "asc",
+        "optionsOverview": "true",
+        "raw": "1",
+        "fields": "symbol,baseSymbol,strikePrice,expirationDate,moneyness,bidPrice,midpoint,askPrice,lastPrice,priceChange,percentChange,volume,openInterest,openInterestChange,volatility,delta,optionType,daysToExpiration,tradeTime,averageVolatility,historicVolatility30d,baseNextEarningsDate,dividendExDate,baseTimeCode,expirationType,impliedVolatilityRank1y,symbolCode,symbolType"
+    }
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Cookie": cookie_str,
+        "X-XSRF-TOKEN": token_str
+    }
+
+    response = requests.get(url, headers=headers, params=params)
+
+    if not response.ok:
+        print(f"❌ Request failed: {response.status_code}")
+        print(response.text[:500])
+        return pd.DataFrame()
+
+    data = response.json()
+    puts = data.get("data", {}).get("Put", [])
+
+    if not puts:
+        print("⚠️ No put options found.")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(puts)
+
+    if target_strike is not None:
+        df["strikePrice"] = pd.to_numeric(df["strikePrice"], errors="coerce")
+        df = df.dropna(subset=["strikePrice"])
+        df = df.loc[(df["strikePrice"] - target_strike).abs().idxmin()].to_frame().T
+
+    return df
+
+def enrich_df_with_put_options(df, exp_date):
+    cookie_str, token_str = get_barchart_tokens()
+    enriched_data = []
+
+    for _, row in tqdm(df.iterrows(), total=len(df)):
+        symbol = row["Symbol"]
+        target_strike = row["Floor"]
+
+        try:
+            options_df = get_barchart_put_options(symbol, exp_date, cookie_str, token_str, target_strike=target_strike)
+
+            # Select the closest strike row and filter columns
+            if options_df is not None and not options_df.empty:
+                selected_row = options_df.iloc[0][["baseSymbol", "strikePrice", "bidPrice", "askPrice", "delta", "volatility"]]
+                enriched_data.append(selected_row)
+                time.sleep(1)
+        except Exception as e:
+            print(f"Error for {symbol}: {e}")
+
+    enriched_df = pd.DataFrame(enriched_data)
+    merged = df.merge(enriched_df, left_on="Symbol", right_on="baseSymbol", how="left")
+
+    return merged
+
+def read_and_filter_stocks(expiration_date, market_cap_threshold=2e9, last_sale_threshold=150, profit_target=0.01):
     """
     Reads the CSV file in the fixed download directory, filters stocks by market cap,
     and calculates an indicator for "Last Sale".
 
     Args:
+        profit_target(float): minimum profit we want in options
+        expiration_date (date): Date of the expiration of options
         market_cap_threshold (float): Filter out stocks with market cap lower than this value.
         last_sale_threshold (float): Threshold for calculating the "Last Sale" indicator.
 
@@ -250,9 +353,6 @@ def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
     df_ma = get_moving_avg(df['Symbol'].tolist())
     df = pd.merge(df, df_ma, on='Symbol', how='left')
 
-    pd.set_option('display.max_columns', None)
-    print(df)
-
     df = df[
         (df['Current Price'] > df['MA_50']) &
         (df['Current Price'] > df['MA_100']) &
@@ -261,89 +361,26 @@ def read_and_filter_stocks(market_cap_threshold=2e9, last_sale_threshold=150):
 
     print(f"Remaining rows after averages: {len(df)}")
 
-    return  df
+    df_w_options = enrich_df_with_put_options(df, expiration_date)
 
-def get_barchart_tokens():
-    options = Options()
-    # Avoid headless mode to ensure tokens load correctly
-    # options.add_argument("--headless")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--start-maximized")
+    df_w_options["Profitability"] = (( pd.to_numeric(df["bidPrice"], errors="coerce")+ pd.to_numeric(df["askPrice"], errors="coerce")) / 2) / pd.to_numeric(df["strikePrice"], errors="coerce")
 
-    driver = webdriver.Chrome(options=options)
+    df_w_options = df_w_options[df_w_options["Profitability"] >= profit_target]
 
-    driver.get("https://www.barchart.com/stocks/quotes/AAPL/options")
-    time.sleep(10)  # Wait to ensure all cookies are set
+    print(f"Remaining rows after profit target: {len(df_w_options)}")
 
-    cookies = driver.get_cookies()
-    cookie_dict = {cookie['name']: cookie['value'] for cookie in cookies}
-
-    # Build cookie string starting at 'market'
-    cookie_items = []
-    market_found = False
-    for cookie in cookies:
-        if cookie['name'] == 'market':
-            market_found = True
-        if market_found:
-            cookie_items.append(f"{cookie['name']}={cookie['value']}")
-    cookie_str = "; ".join(cookie_items)
-
-    # Decode XSRF-TOKEN
-    xsrf_token_raw = cookie_dict.get('XSRF-TOKEN')
-    xsrf_token = urllib.parse.unquote(xsrf_token_raw) if xsrf_token_raw else None
-
-    driver.quit()
-
-    return cookie_str, xsrf_token
+    return  df_w_options
 
 if RUN_download_stocks:
     download_stocks_csv()
 
 if RUN_filter_stocks:
-    read_and_filter_stocks(250e9, 150)
+    stocks_data = read_and_filter_stocks('2025-07-25', 150e9, 150, 0.01)
+
+    stocks_data.to_csv('stocks_data.csv', index=False)
+
+
+
 
 if RUN_testing:
     print('Fern')
-    cookie_str, token_str = get_barchart_tokens()
-    print(cookie_str)
-    print(token_str)
-    test = True
-    if test:
-        url = "https://www.barchart.com/proxies/core-api/v1/options/get"
-        params = {
-            "baseSymbol": "AAPL",
-            "expirationDate": "2025-06-27",
-            "expirationType": "weekly",
-            "groupBy": "optionType",
-            "orderBy": "strikePrice",
-            "orderDir": "asc",
-            "optionsOverview": "true",
-            "raw": "1",
-            "fields": "symbol,baseSymbol,strikePrice,expirationDate,moneyness,bidPrice,midpoint,askPrice,lastPrice,priceChange,percentChange,volume,openInterest,openInterestChange,volatility,delta,optionType,daysToExpiration,tradeTime,averageVolatility,historicVolatility30d,baseNextEarningsDate,dividendExDate,baseTimeCode,expirationType,impliedVolatilityRank1y,symbolCode,symbolType"
-
-        }
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Cookie":f"{cookie_str}",
-            "X-XSRF-TOKEN":f"{token_str}"
-        }
-
-        response = requests.get(url, headers=headers, params=params)
-
-        if response.ok:
-            data = response.json()
-            print("✅ Success! Keys in response:", data.keys())
-            puts = data["data"].get("Put", [])
-
-            strike_to_find = "205.00"  # string, because strikePrice in your example is string
-
-            option_205_put = next((opt for opt in puts if opt.get("strikePrice") == strike_to_find), None)
-
-            if option_205_put:
-                print("Bid:", option_205_put.get("bidPrice"))
-                print("Ask:", option_205_put.get("askPrice"))
-            else:
-                print("Put option with strike 205 not found.")
-        else:
-            print(f"❌ Request failed: {response.status_code}")
-            print(response.text[:500])
