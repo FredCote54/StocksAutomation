@@ -403,8 +403,20 @@ def beautify_csv(csv_path, attributes, output_path='stocks_output.html'):
         if col not in df.columns:  # skip already-formatted Profitability
             df[col] = df[col].round(2)
 
+    title_text = "$$$ P-A is about to make it rain $$$"
+    subtitle_text = "2025-07-18 put options"
+
+    header_html = f"""
+    <div class="header-image">
+        <img src="Ray_lewis.png" alt="Header Image">
+    </div>
+    <div class="page-title">
+        <h1>{title_text}</h1>
+        <h2>{subtitle_text}</h2>
+    </div>
+    """
     # Export to HTML with styling
-    html = df.to_html(index=False, border=0, classes='clean-table')
+    html = header_html + df.to_html(index=False, border=0, classes='clean-table')
 
     # Styling: centered text + light blue header
     css = """
@@ -428,6 +440,31 @@ def beautify_csv(csv_path, attributes, output_path='stocks_output.html'):
         background-color: #5bc0de;
         color: white;
         text-align: center;
+    }
+    header-image {
+        text-align: right;
+        margin-bottom: 10px;
+    }
+    .header-image img {
+        max-width: 150px;
+        height: auto;
+        border-radius: 8px;
+    }
+    
+    .page-title {
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    .page-title h1 {
+        font-size: 28px;
+        margin: 0;
+        color: #333;
+    }
+    .page-title h2 {
+        font-size: 18px;
+        font-weight: normal;
+        color: #666;
+        margin-top: 5px;
     }
     </style>
     """
