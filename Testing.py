@@ -229,7 +229,7 @@ def get_barchart_put_options(symbol, expiration, cookie_str, token_str, target_s
     params = {
         "baseSymbol": symbol,
         "expirationDate": expiration,
-        "expirationType": "weekly",
+        "expirationType": "monthly",
         "groupBy": "optionType",
         "orderBy": "strikePrice",
         "orderDir": "asc",
@@ -384,7 +384,7 @@ if RUN_download_stocks:
     download_stocks_csv()
 
 if RUN_filter_stocks:
-    stocks_data = read_and_filter_stocks('2025-07-25', 3e9, 150, 0.01)
+    stocks_data = read_and_filter_stocks('2025-07-18', 150e9, 150, 0.01)
 
     stocks_data.to_csv('stocks_data.csv', index=False)
 
