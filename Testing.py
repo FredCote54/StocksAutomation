@@ -24,7 +24,8 @@ from tqdm import tqdm
 
 RUN_download_stocks = False
 RUN_filter_stocks = False
-RUN_testing = True
+RUN_beautify = True
+RUN_testing = False
 
 #############################################################################
 #############################################################################
@@ -395,6 +396,8 @@ def beautify_csv(csv_path, attributes, output_path='stocks_output.html'):
         if 'Profitability' in col:
             df[col] = df[col].apply(lambda x: f"{x * 100:.3f}%")
 
+    df = df.sort_values(by='Profitability', ascending=False, key=lambda col: col.str.rstrip('%').astype(float))
+
     # Round other numerical columns to 2 decimals
     for col in df.select_dtypes(include='number').columns:
         if col not in df.columns:  # skip already-formatted Profitability
@@ -438,12 +441,11 @@ if RUN_download_stocks:
     download_stocks_csv()
 
 if RUN_filter_stocks:
-    stocks_data = read_and_filter_stocks('2025-07-18', 150e9, 150, 0.01)
+    stocks_data = read_and_filter_stocks('2025-07-18', 3e9, 150, 0.01)
 
     stocks_data.to_csv('stocks_data.csv', index=False)
 
-if RUN_testing:
-    print('Fern')
+if RUN_beautify:
     print_columns = [
         'Symbol',
         'Current Price',
@@ -456,3 +458,5 @@ if RUN_testing:
         'Profitability'
     ]
     beautify_csv('stocks_data.csv', print_columns)
+if RUN_testing:
+    print('Fern')
