@@ -23,8 +23,8 @@ from tqdm import tqdm
 
 
 RUN_download_stocks = False
-RUN_filter_stocks = True
-RUN_testing = False
+RUN_filter_stocks = False
+RUN_testing = True
 
 #############################################################################
 #############################################################################
@@ -380,6 +380,60 @@ def read_and_filter_stocks(expiration_date, market_cap_threshold=2e9, last_sale_
 
     return  df_w_options
 
+def beautify_csv(csv_path, attributes, output_path='stocks_output.html'):
+    # Read CSV
+    df = pd.read_csv(csv_path)
+
+    # Filter columns
+    df = df[attributes]
+
+    # Format column names (title case with underscores replaced)
+    df.columns = [col.replace('_', ' ').title() for col in df.columns]
+
+    # Format 'Profitability' as percentage if present
+    for col in df.columns:
+        if 'Profitability' in col:
+            df[col] = df[col].apply(lambda x: f"{x * 100:.3f}%")
+
+    # Round other numerical columns to 2 decimals
+    for col in df.select_dtypes(include='number').columns:
+        if col not in df.columns:  # skip already-formatted Profitability
+            df[col] = df[col].round(2)
+
+    # Export to HTML with styling
+    html = df.to_html(index=False, border=0, classes='clean-table')
+
+    # Styling: centered text + light blue header
+    css = """
+    <style>
+    .clean-table {
+        font-family: Arial, sans-serif;
+        border-collapse: collapse;
+        width: 100%;
+        text-align: center;
+    }
+    .clean-table td, .clean-table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: center;
+    }
+    .clean-table tr:nth-child(even) {background-color: #f9f9f9;}
+    .clean-table tr:hover {background-color: #f1f1f1;}
+    .clean-table th {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        background-color: #5bc0de;
+        color: white;
+        text-align: center;
+    }
+    </style>
+    """
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(css + html)
+
+    print(f"✅ Cleaned table saved to {output_path}")
+
 if RUN_download_stocks:
     download_stocks_csv()
 
@@ -388,8 +442,17 @@ if RUN_filter_stocks:
 
     stocks_data.to_csv('stocks_data.csv', index=False)
 
-
-
-
 if RUN_testing:
     print('Fern')
+    print_columns = [
+        'Symbol',
+        'Current Price',
+        'Floor',
+        'strikePrice',
+        'bidPrice',
+        'askPrice',
+        'delta',
+        'volatility',
+        'Profitability'
+    ]
+    beautify_csv('stocks_data.csv', print_columns)
