@@ -285,6 +285,7 @@ def enrich_df_with_put_options(df, exp_date):
                 time.sleep(1)
         except Exception as e:
             print(f"Error for {symbol}: {e}")
+            time.sleep(1)
 
     enriched_df = pd.DataFrame(enriched_data)
     merged = df.merge(enriched_df, left_on="Symbol", right_on="baseSymbol", how="left")
@@ -383,7 +384,7 @@ if RUN_download_stocks:
     download_stocks_csv()
 
 if RUN_filter_stocks:
-    stocks_data = read_and_filter_stocks('2025-07-25', 75e9, 150, 0.01)
+    stocks_data = read_and_filter_stocks('2025-07-25', 3e9, 150, 0.01)
 
     stocks_data.to_csv('stocks_data.csv', index=False)
 
