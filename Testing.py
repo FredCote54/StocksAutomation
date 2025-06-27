@@ -359,15 +359,23 @@ def read_and_filter_stocks(expiration_date, market_cap_threshold=2e9, last_sale_
         (df['Current Price'] > df['MA_200'])
     ]
 
-    print(f"Remaining rows after averages: {len(df)}")
+    print(f"Remaining rows after below Moving Averages: {len(df)}")
 
     df_w_options = enrich_df_with_put_options(df, expiration_date)
 
-    df_w_options["Profitability"] = (( pd.to_numeric(df["bidPrice"], errors="coerce")+ pd.to_numeric(df["askPrice"], errors="coerce")) / 2) / pd.to_numeric(df["strikePrice"], errors="coerce")
+    df_w_options = df_w_options[df_w_options["bidPrice"].notna()]
+
+    print(f"Remaining rows after removing rows without options: {len(df_w_options)}")
+
+    df_w_options["Profitability"] = (( pd.to_numeric(df_w_options["bidPrice"], errors="coerce")+ pd.to_numeric(df_w_options["askPrice"], errors="coerce")) / 2) / pd.to_numeric(df_w_options["strikePrice"], errors="coerce")
 
     df_w_options = df_w_options[df_w_options["Profitability"] >= profit_target]
 
-    print(f"Remaining rows after profit target: {len(df_w_options)}")
+    df_w_options = df_w_options[pd.to_numeric(df_w_options["bidPrice"], errors="coerce") != 0]
+
+    df_w_options = df_w_options[(pd.to_numeric(df_w_options["askPrice"], errors="coerce") / pd.to_numeric(df_w_options["bidPrice"], errors="coerce")) < 1.5]
+
+    print(f"Remaining rows after removing rows under profit target: {len(df_w_options)}")
 
     return  df_w_options
 
@@ -375,7 +383,7 @@ if RUN_download_stocks:
     download_stocks_csv()
 
 if RUN_filter_stocks:
-    stocks_data = read_and_filter_stocks('2025-07-25', 150e9, 150, 0.01)
+    stocks_data = read_and_filter_stocks('2025-07-25', 75e9, 150, 0.01)
 
     stocks_data.to_csv('stocks_data.csv', index=False)
 
