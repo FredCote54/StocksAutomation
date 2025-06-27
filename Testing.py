@@ -408,7 +408,7 @@ def beautify_csv(csv_path, attributes, output_path='stocks_output.html'):
 
     header_html = f"""
     <div class="header-image">
-        <img src="Ray_lewis.png" alt="Header Image">
+        <img src="Ray_Lewis.png" alt="Header Image">
     </div>
     <div class="page-title">
         <h1>{title_text}</h1>
