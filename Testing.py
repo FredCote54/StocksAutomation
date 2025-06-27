@@ -446,7 +446,7 @@ def beautify_csv(csv_path, attributes, output_path='stocks_output.html'):
         margin-bottom: 10px;
     }
     .header-image img {
-        max-width: 150px;
+        max-width: 300px;
         height: auto;
         border-radius: 8px;
     }
