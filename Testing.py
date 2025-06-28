@@ -121,10 +121,16 @@ def get_moving_avg(tickers):
             "Symbol": symbol,
             "MA_20": None,
             "HV_20": None,
-            "Floor": None,
+            "HV_50": None,
             "MA_50": None,
             "MA_100": None,
             "MA_200": None,
+            "Floor_20_1": None,
+            "Floor_20_2": None,
+            "Floor_20_3": None,
+            "Floor_50_1": None,
+            "Floor_50_2": None,
+            "Floor_50_3": None,
             "Current Price": None
         }
 
@@ -173,11 +179,22 @@ def get_moving_avg(tickers):
                                 continue
                             if "20-Day" in period:
                                 data["HV_20"] = value
+                            elif "50-Day" in period:
+                                data["HV_50"] = value
+
 
             # Compute the floor if both values are available
             if data["MA_20"] and data["HV_20"]:
-                hv_daily = (data["HV_20"]/100) / math.sqrt(252)
-                data["Floor"] = round(data["MA_20"] * (1 - 3 * hv_daily), 2)
+                hv_daily_20 = (data["HV_20"]/100) / math.sqrt(252)
+                data["Floor_20_1"] = round(data["MA_20"] * (1 - 1 * hv_daily_20), 2)
+                data["Floor_20_2"] = round(data["MA_20"] * (1 - 2 * hv_daily_20), 2)
+                data["Floor_20_3"] = round(data["MA_20"] * (1 - 3 * hv_daily_20), 2)
+
+            if data["MA_50"] and data["HV_50"]:
+                hv_daily_50 = (data["HV_50"]/100) / math.sqrt(252)
+                data["Floor_50_1"] = round(data["MA_50"] * (1 - 1 * hv_daily_50), 2)
+                data["Floor_50_2"] = round(data["MA_50"] * (1 - 2 * hv_daily_50), 2)
+                data["Floor_50_3"] = round(data["MA_50"] * (1 - 3 * hv_daily_50), 2)
 
             soup_text = resp_bc.text
             last_price = extract_barchart_last_price(soup_text)
@@ -264,7 +281,22 @@ def get_barchart_put_options(symbol, expiration, cookie_str, token_str, target_s
     if target_strike is not None:
         df["strikePrice"] = pd.to_numeric(df["strikePrice"], errors="coerce")
         df = df.dropna(subset=["strikePrice"])
-        df = df.loc[(df["strikePrice"] - target_strike).abs().idxmin()].to_frame().T
+
+        # Initialize a list to keep all the row indices to retain
+        indices_to_keep = set()
+
+        for label, strike_val in target_strike.items():
+            # Find index of the row with strike closest to this strike_val
+            idx = (df["strikePrice"] - strike_val).abs().idxmin()
+
+            # Create a column for this label, default to 0
+            df[label] = 0
+            df.at[idx, label] = 1
+
+            indices_to_keep.add(idx)
+
+        # Keep only the rows that were selected for at least one floor
+        df = df.loc[list(indices_to_keep)]
 
     return df
 
@@ -274,16 +306,32 @@ def enrich_df_with_put_options(df, exp_date):
 
     for _, row in tqdm(df.iterrows(), total=len(df)):
         symbol = row["Symbol"]
-        target_strike = row["Floor"]
+        target_strike = {
+            "Floor_20_1": row["Floor_20_1"],
+            "Floor_20_2": row["Floor_20_2"],
+            "Floor_20_3": row["Floor_20_3"],
+            "Floor_50_1": row["Floor_50_1"],
+            "Floor_50_2": row["Floor_50_2"],
+            "Floor_50_3": row["Floor_50_3"],
+        }
 
         try:
             options_df = get_barchart_put_options(symbol, exp_date, cookie_str, token_str, target_strike=target_strike)
 
-            # Select the closest strike row and filter columns
             if options_df is not None and not options_df.empty:
-                selected_row = options_df.iloc[0][["baseSymbol", "strikePrice", "bidPrice", "askPrice", "delta", "volatility"]]
-                enriched_data.append(selected_row)
-                time.sleep(1)
+                # Keep core option columns
+                base_columns = ["baseSymbol", "strikePrice", "bidPrice", "askPrice", "delta", "volatility"]
+
+                # Detect all tag columns dynamically (e.g., "Floor_20_1", etc.)
+                tag_columns = [col for col in options_df.columns if col.startswith("Floor_")]
+
+                # Subset the DataFrame
+                selected_rows = options_df[base_columns + tag_columns]
+
+                # Append all selected rows
+                enriched_data.extend(selected_rows.to_dict("records"))
+
+            time.sleep(1)
         except Exception as e:
             print(f"Error for {symbol}: {e}")
             time.sleep(1)
