@@ -23,8 +23,8 @@ from tqdm import tqdm
 
 
 RUN_download_stocks = False
-RUN_filter_stocks = False
-RUN_beautify = True
+RUN_filter_stocks = True
+RUN_beautify = False
 RUN_testing = False
 
 #############################################################################
@@ -307,12 +307,12 @@ def enrich_df_with_put_options(df, exp_date):
     for _, row in tqdm(df.iterrows(), total=len(df)):
         symbol = row["Symbol"]
         target_strike = {
-            "Floor_20_1": row["Floor_20_1"],
-            "Floor_20_2": row["Floor_20_2"],
-            "Floor_20_3": row["Floor_20_3"],
-            "Floor_50_1": row["Floor_50_1"],
-            "Floor_50_2": row["Floor_50_2"],
-            "Floor_50_3": row["Floor_50_3"],
+            "Floor_20_1_Tag": row["Floor_20_1"],
+            "Floor_20_2_Tag": row["Floor_20_2"],
+            "Floor_20_3_Tag": row["Floor_20_3"],
+            "Floor_50_1_Tag": row["Floor_50_1"],
+            "Floor_50_2_Tag": row["Floor_50_2"],
+            "Floor_50_3_Tag": row["Floor_50_3"],
         }
 
         try:
@@ -415,21 +415,45 @@ def read_and_filter_stocks(expiration_date, market_cap_threshold=2e9, last_sale_
 
     df_w_options = df_w_options[df_w_options["bidPrice"].notna()]
 
-    print(f"Remaining rows after removing rows without options: {len(df_w_options)}")
+    print(f"Remaining unique stocks: {df_w_options['Symbol'].nunique()}")
 
-    df_w_options["Profitability"] = (( pd.to_numeric(df_w_options["bidPrice"], errors="coerce")+ pd.to_numeric(df_w_options["askPrice"], errors="coerce")) / 2) / pd.to_numeric(df_w_options["strikePrice"], errors="coerce")
+    print(f"Number of total options rows that we have : {len(df_w_options)}")
 
-    df_w_options = df_w_options[df_w_options["Profitability"] >= profit_target]
+    floor_val_cols = [col for col in df_w_options.columns if col.startswith("Floor_") and not col.endswith("Tag")]
+    tag_cols = [col for col in df_w_options.columns if
+                col.endswith("Tag") and col.replace("_Tag", "") in floor_val_cols]
 
-    df_w_options = df_w_options[pd.to_numeric(df_w_options["delta"], errors="coerce") >= -0.15]
+    expanded_rows = []
 
-    df_w_options = df_w_options[pd.to_numeric(df_w_options["bidPrice"], errors="coerce") != 0]
+    for _, row in df_w_options.iterrows():
+        for tag_col in tag_cols:
+            if row.get(tag_col) == 1:
+                base_col = tag_col.replace("_Tag", "")
+                floor_value = row.get(base_col)
 
-    df_w_options = df_w_options[(pd.to_numeric(df_w_options["askPrice"], errors="coerce") / pd.to_numeric(df_w_options["bidPrice"], errors="coerce")) < 1.5]
+                # Keep only relevant columns
+                clean_row = row.drop(floor_val_cols + tag_cols).copy()
+                clean_row["Floor Tag"] = base_col
+                clean_row["Floor Value"] = floor_value
+                expanded_rows.append(clean_row)
 
-    print(f"Remaining rows after removing rows under profit target: {len(df_w_options)}")
+    # Step 4: Create the final cleaned DataFrame
+    df_cleaned = pd.DataFrame(expanded_rows)
 
-    return  df_w_options
+
+    df_cleaned["Profitability"] = (( pd.to_numeric(df_cleaned["bidPrice"], errors="coerce")+ pd.to_numeric(df_cleaned["askPrice"], errors="coerce")) / 2) / pd.to_numeric(df_cleaned["strikePrice"], errors="coerce")
+
+    df_cleaned = df_cleaned[df_cleaned["Profitability"] >= profit_target]
+
+    df_cleaned = df_cleaned[pd.to_numeric(df_cleaned["delta"], errors="coerce") >= -0.15]
+
+    df_cleaned = df_cleaned[pd.to_numeric(df_cleaned["bidPrice"], errors="coerce") != 0]
+
+    df_cleaned = df_cleaned[(pd.to_numeric(df_cleaned["askPrice"], errors="coerce") / pd.to_numeric(df_cleaned["bidPrice"], errors="coerce")) < 1.5]
+
+    print(f"Remaining rows after removing options that do not meet criteria: {len(df_cleaned)}")
+
+    return  df_cleaned
 
 def beautify_csv(csv_path, attributes, output_path='stocks_output.html'):
     # Read CSV
@@ -446,7 +470,13 @@ def beautify_csv(csv_path, attributes, output_path='stocks_output.html'):
         if 'Profitability' in col:
             df[col] = df[col].apply(lambda x: f"{x * 100:.3f}%")
 
-    df = df.sort_values(by='Profitability', ascending=False, key=lambda col: col.str.rstrip('%').astype(float))
+    df = df.sort_values(
+        by="Profitability",
+        ascending=False,
+        key=lambda col: col.str.rstrip('%').astype(float)
+        .groupby(df["Floor Tag"])
+        .transform("rank", ascending=False)
+    )
 
     # Round other numerical columns to 2 decimals
     for col in df.select_dtypes(include='number').columns:
@@ -536,7 +566,8 @@ if RUN_beautify:
     print_columns = [
         'Symbol',
         'Current Price',
-        'Floor',
+        'Floor Tag',
+        'Floor Value',
         'strikePrice',
         'bidPrice',
         'askPrice',
