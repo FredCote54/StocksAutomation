@@ -177,7 +177,7 @@ def get_moving_avg(tickers):
             # Compute the floor if both values are available
             if data["MA_20"] and data["HV_20"]:
                 hv_daily = (data["HV_20"]/100) / math.sqrt(252)
-                data["Floor"] = round(data["MA_20"] * (1 - 2 * hv_daily), 2)
+                data["Floor"] = round(data["MA_20"] * (1 - 3 * hv_daily), 2)
 
             soup_text = resp_bc.text
             last_price = extract_barchart_last_price(soup_text)
@@ -372,6 +372,8 @@ def read_and_filter_stocks(expiration_date, market_cap_threshold=2e9, last_sale_
     df_w_options["Profitability"] = (( pd.to_numeric(df_w_options["bidPrice"], errors="coerce")+ pd.to_numeric(df_w_options["askPrice"], errors="coerce")) / 2) / pd.to_numeric(df_w_options["strikePrice"], errors="coerce")
 
     df_w_options = df_w_options[df_w_options["Profitability"] >= profit_target]
+
+    df_w_options = df_w_options[pd.to_numeric(df_w_options["delta"], errors="coerce") >= -0.15]
 
     df_w_options = df_w_options[pd.to_numeric(df_w_options["bidPrice"], errors="coerce") != 0]
 
