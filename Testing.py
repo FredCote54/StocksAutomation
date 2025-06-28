@@ -23,8 +23,8 @@ from tqdm import tqdm
 
 
 RUN_download_stocks = False
-RUN_filter_stocks = True
-RUN_beautify = False
+RUN_filter_stocks = False
+RUN_beautify = True
 RUN_testing = False
 
 #############################################################################
@@ -470,13 +470,9 @@ def beautify_csv(csv_path, attributes, output_path='stocks_output.html'):
         if 'Profitability' in col:
             df[col] = df[col].apply(lambda x: f"{x * 100:.3f}%")
 
-    df = df.sort_values(
-        by="Profitability",
-        ascending=False,
-        key=lambda col: col.str.rstrip('%').astype(float)
-        .groupby(df["Floor Tag"])
-        .transform("rank", ascending=False)
-    )
+    df["Profitability_float"] = df["Profitability"].str.rstrip('%').astype(float)
+    df = df.sort_values(by=["Floor Tag", "Profitability_float"], ascending=[True, False])
+    df = df.drop(columns=["Profitability_float"])
 
     # Round other numerical columns to 2 decimals
     for col in df.select_dtypes(include='number').columns:
