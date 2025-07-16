@@ -24,8 +24,8 @@ from tqdm import tqdm
 
 RUN_download_stocks = False
 RUN_filter_stocks = False
-RUN_beautify = True
-RUN_testing = False
+RUN_beautify = False
+RUN_testing = True
 
 #############################################################################
 #############################################################################
@@ -221,17 +221,36 @@ def get_barchart_tokens():
     driver.get("https://www.barchart.com/stocks/quotes/AAPL/options")
     time.sleep(10)  # Wait to ensure all cookies are set
 
+    priority_order = ['market', 'bcFreeUserPageView', 'webinarClosed', 'laravel_token',
+                      'laravel_session', 'XSRF-TOKEN']
+
     cookies = driver.get_cookies()
     cookie_dict = {cookie['name']: cookie['value'] for cookie in cookies}
 
-    # Build cookie string starting at 'market'
+    priority_order = [
+        'market',
+        'bcFreeUserPageView',
+        'webinarClosed',
+        'laravel_token',
+        'XSRF-TOKEN',
+        'laravel_session',
+    ]
+
+    # Add priority cookies first, in defined order
+    seen = set()
     cookie_items = []
-    market_found = False
+    for name in priority_order:
+        if name in cookie_dict:
+            cookie_items.append(f"{name}={cookie_dict[name]}")
+            seen.add(name)
+
+    # Add the remaining cookies in original order, excluding those already added
     for cookie in cookies:
-        if cookie['name'] == 'market':
-            market_found = True
-        if market_found:
-            cookie_items.append(f"{cookie['name']}={cookie['value']}")
+        name = cookie['name']
+        if name not in seen:
+            cookie_items.append(f"{name}={cookie['value']}")
+            seen.add(name)
+
     cookie_str = "; ".join(cookie_items)
 
     # Decode XSRF-TOKEN
@@ -554,7 +573,7 @@ if RUN_download_stocks:
     download_stocks_csv()
 
 if RUN_filter_stocks:
-    stocks_data = read_and_filter_stocks('2025-07-18', 3e9, 150, 0.01)
+    stocks_data = read_and_filter_stocks('2025-08-15', 3e9, 150, 0.01)
 
     stocks_data.to_csv('stocks_data.csv', index=False)
 
