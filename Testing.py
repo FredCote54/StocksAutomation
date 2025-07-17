@@ -21,11 +21,12 @@ from tqdm import tqdm
 ####################        CHOOSE PARAMETERS       #########################
 #############################################################################
 
+options_date = '2025-08-15'
 
 RUN_download_stocks = False
 RUN_filter_stocks = False
-RUN_beautify = False
-RUN_testing = True
+RUN_beautify = True
+RUN_testing = False
 
 #############################################################################
 #############################################################################
@@ -499,7 +500,7 @@ def beautify_csv(csv_path, attributes, output_path='stocks_output.html'):
             df[col] = df[col].round(2)
 
     title_text = "$$$ P-A is about to make it rain $$$"
-    subtitle_text = "2025-07-18 put options"
+    subtitle_text = f"{options_date} put options"
 
     header_html = f"""
     <div class="header-image">
@@ -573,7 +574,7 @@ if RUN_download_stocks:
     download_stocks_csv()
 
 if RUN_filter_stocks:
-    stocks_data = read_and_filter_stocks('2025-08-15', 3e9, 150, 0.01)
+    stocks_data = read_and_filter_stocks(options_date, 3e9, 150, 0.01)
 
     stocks_data.to_csv('stocks_data.csv', index=False)
 
@@ -591,5 +592,6 @@ if RUN_beautify:
         'Profitability'
     ]
     beautify_csv('stocks_data.csv', print_columns)
+
 if RUN_testing:
     print('Fern')
