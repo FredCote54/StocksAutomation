@@ -248,21 +248,16 @@
                     throw new Error('No games found');
                 }
                 
-                // Filter games by selected week
-                const selectedWeek = getSelectedWeek();
-                const weekStart = getWeekStartDate(selectedWeek);
-                const weekEnd = getWeekEndDate(selectedWeek);
+                // For now, let's display all games to see what we're getting
+                // We can add filtering later once we understand the data structure
+                console.log('All games received:', data);
+                console.log('First few games:', data.slice(0, 3));
                 
-                const filteredGames = data.filter(game => {
-                    const gameDate = new Date(game.commence_time);
-                    return gameDate >= weekStart && gameDate <= weekEnd;
-                });
-                
-                if (filteredGames.length === 0) {
-                    throw new Error(`No games found for Week ${selectedWeek}`);
+                if (data.length === 0) {
+                    throw new Error('No games found');
                 }
                 
-                displayOdds(filteredGames);
+                displayOdds(data);
                 
             } catch (error) {
                 console.error('Error fetching odds:', error);
