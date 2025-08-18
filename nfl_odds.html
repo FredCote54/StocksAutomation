@@ -31,20 +31,7 @@
             margin-bottom: 20px;
         }
         
-        .week-selector {
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        
-        .week-selector select {
-            padding: 8px 15px;
-            font-size: 16px;
-            border: 2px solid #013369;
-            border-radius: 5px;
-            background-color: white;
-            color: #013369;
-            cursor: pointer;
-        }
+
         
         .button-container {
             text-align: center;
@@ -140,29 +127,7 @@
         <div class="week-info">NFL Regular Season Odds</div>
     </div>
     
-    <div class="week-selector">
-        <label for="weekSelect">Select Week: </label>
-        <select id="weekSelect">
-            <option value="1">Week 1</option>
-            <option value="2">Week 2</option>
-            <option value="3">Week 3</option>
-            <option value="4">Week 4</option>
-            <option value="5">Week 5</option>
-            <option value="6">Week 6</option>
-            <option value="7">Week 7</option>
-            <option value="8">Week 8</option>
-            <option value="9">Week 9</option>
-            <option value="10">Week 10</option>
-            <option value="11">Week 11</option>
-            <option value="12">Week 12</option>
-            <option value="13">Week 13</option>
-            <option value="14">Week 14</option>
-            <option value="15">Week 15</option>
-            <option value="16">Week 16</option>
-            <option value="17">Week 17</option>
-            <option value="18">Week 18</option>
-        </select>
-    </div>
+
     
     <div class="button-container">
         <button class="fetch-button" onclick="fetchOdds()" id="fetchButton">Get odds for Sam Minou</button>
@@ -204,24 +169,7 @@
         
 
         
-        function getSelectedWeek() {
-            return document.getElementById('weekSelect').value;
-        }
-        
-        function getWeekStartDate(weekNumber) {
-            // NFL regular season typically starts around September 5-10
-            const seasonStart = new Date(2024, 8, 5); // September 5, 2024
-            const weekStart = new Date(seasonStart);
-            weekStart.setDate(seasonStart.getDate() + (weekNumber - 1) * 7);
-            return weekStart;
-        }
-        
-        function getWeekEndDate(weekNumber) {
-            const weekStart = getWeekStartDate(weekNumber);
-            const weekEnd = new Date(weekStart);
-            weekEnd.setDate(weekStart.getDate() + 6);
-            return weekEnd;
-        }
+
         
         async function fetchOdds() {
             const button = document.getElementById('fetchButton');
@@ -248,16 +196,22 @@
                     throw new Error('No games found');
                 }
                 
-                // For now, let's display all games to see what we're getting
-                // We can add filtering later once we understand the data structure
-                console.log('All games received:', data);
-                console.log('First few games:', data.slice(0, 3));
-                
                 if (data.length === 0) {
                     throw new Error('No games found');
                 }
                 
-                displayOdds(data);
+                // Filter out games that have already happened
+                const now = new Date();
+                const upcomingGames = data.filter(game => {
+                    const gameDate = new Date(game.commence_time);
+                    return gameDate > now;
+                });
+                
+                if (upcomingGames.length === 0) {
+                    throw new Error('No upcoming games found');
+                }
+                
+                displayOdds(upcomingGames);
                 
             } catch (error) {
                 console.error('Error fetching odds:', error);
@@ -315,14 +269,6 @@
         }
         
         // Initialize page
-        // Set default week to current week if available
-        const now = new Date();
-        const seasonStart = new Date(2024, 8, 5); // September 5, 2024
-        const weeksSinceStart = Math.floor((now - seasonStart) / (7 * 24 * 60 * 60 * 1000));
-        
-        if (weeksSinceStart >= 0 && weeksSinceStart < 18) {
-            document.getElementById('weekSelect').value = weeksSinceStart + 1;
-        }
     </script>
 </body>
 </html>
