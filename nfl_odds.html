@@ -31,6 +31,21 @@
             margin-bottom: 20px;
         }
         
+        .week-selector {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .week-selector select {
+            padding: 8px 15px;
+            font-size: 16px;
+            border: 2px solid #013369;
+            border-radius: 5px;
+            background-color: white;
+            color: #013369;
+            cursor: pointer;
+        }
+        
         .button-container {
             text-align: center;
             margin-bottom: 30px;
@@ -99,12 +114,13 @@
             font-size: 16px;
         }
         
-        .positive-odds {
+        .favorite-odds {
             color: #28a745;
+            font-weight: bold;
         }
         
-        .negative-odds {
-            color: #dc3545;
+        .underdog-odds {
+            color: #666;
         }
         
         .error-message {
@@ -120,8 +136,32 @@
 </head>
 <body>
     <div class="header">
-        <img src="https://upload.wikimedia.org/wikipedia/en/a/a2/National_Football_League_logo.svg" alt="NFL Logo" class="nfl-logo">
-        <div class="week-info" id="weekInfo">NFL Week Odds</div>
+        <img src="https://upload.wikimedia.org/wikipedia/en/a2/National_Football_League_logo.svg" alt="NFL Logo" class="nfl-logo">
+        <div class="week-info">NFL Regular Season Odds</div>
+    </div>
+    
+    <div class="week-selector">
+        <label for="weekSelect">Select Week: </label>
+        <select id="weekSelect">
+            <option value="1">Week 1</option>
+            <option value="2">Week 2</option>
+            <option value="3">Week 3</option>
+            <option value="4">Week 4</option>
+            <option value="5">Week 5</option>
+            <option value="6">Week 6</option>
+            <option value="7">Week 7</option>
+            <option value="8">Week 8</option>
+            <option value="9">Week 9</option>
+            <option value="10">Week 10</option>
+            <option value="11">Week 11</option>
+            <option value="12">Week 12</option>
+            <option value="13">Week 13</option>
+            <option value="14">Week 14</option>
+            <option value="15">Week 15</option>
+            <option value="16">Week 16</option>
+            <option value="17">Week 17</option>
+            <option value="18">Week 18</option>
+        </select>
     </div>
     
     <div class="button-container">
@@ -162,29 +202,25 @@
             });
         }
         
-        function formatOdds(price) {
-            if (price > 0) {
-                return `+${price}`;
-            }
-            return price.toString();
+
+        
+        function getSelectedWeek() {
+            return document.getElementById('weekSelect').value;
         }
         
-        function getWeekInfo() {
-            const now = new Date();
-            const startOfSeason = new Date(2024, 8, 5); // September 5, 2024 (approximate start)
-            const weeksSinceStart = Math.floor((now - startOfSeason) / (7 * 24 * 60 * 60 * 1000));
-            
-            if (weeksSinceStart < 0) {
-                return "Pre-season";
-            } else if (weeksSinceStart <= 18) {
-                return `Week ${weeksSinceStart + 1}`;
-            } else {
-                return "Post-season";
-            }
+        function getWeekStartDate(weekNumber) {
+            // NFL regular season typically starts around September 5-10
+            const seasonStart = new Date(2024, 8, 5); // September 5, 2024
+            const weekStart = new Date(seasonStart);
+            weekStart.setDate(seasonStart.getDate() + (weekNumber - 1) * 7);
+            return weekStart;
         }
         
-        function updateWeekInfo() {
-            document.getElementById('weekInfo').textContent = `NFL ${getWeekInfo()} Odds`;
+        function getWeekEndDate(weekNumber) {
+            const weekStart = getWeekStartDate(weekNumber);
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+            return weekEnd;
         }
         
         async function fetchOdds() {
@@ -209,10 +245,24 @@
                 const data = await response.json();
                 
                 if (data.length === 0) {
-                    throw new Error('No games found for this week');
+                    throw new Error('No games found');
                 }
                 
-                displayOdds(data);
+                // Filter games by selected week
+                const selectedWeek = getSelectedWeek();
+                const weekStart = getWeekStartDate(selectedWeek);
+                const weekEnd = getWeekEndDate(selectedWeek);
+                
+                const filteredGames = data.filter(game => {
+                    const gameDate = new Date(game.commence_time);
+                    return gameDate >= weekStart && gameDate <= weekEnd;
+                });
+                
+                if (filteredGames.length === 0) {
+                    throw new Error(`No games found for Week ${selectedWeek}`);
+                }
+                
+                displayOdds(filteredGames);
                 
             } catch (error) {
                 console.error('Error fetching odds:', error);
@@ -240,12 +290,18 @@
                     const awayOutcome = moneylineMarket.outcomes.find(outcome => outcome.name === game.away_team);
                     const homeOutcome = moneylineMarket.outcomes.find(outcome => outcome.name === game.home_team);
                     
+                    // Determine which team is the favorite (lower decimal odds)
+                    const awayOdds = awayOutcome?.price || 0;
+                    const homeOdds = homeOutcome?.price || 0;
+                    const isAwayFavorite = awayOdds > 0 && homeOdds > 0 && awayOdds < homeOdds;
+                    const isHomeFavorite = homeOdds > 0 && awayOdds > 0 && homeOdds < awayOdds;
+                    
                     row.innerHTML = `
                         <td>${formatDate(game.commence_time)}</td>
                         <td class="team-name">${game.away_team}</td>
                         <td class="team-name">${game.home_team}</td>
-                        <td class="odds-value ${awayOutcome?.price > 0 ? 'positive-odds' : 'negative-odds'}">${awayOutcome ? formatOdds(awayOutcome.price) : 'N/A'}</td>
-                        <td class="odds-value ${homeOutcome?.price > 0 ? 'positive-odds' : 'negative-odds'}">${homeOutcome ? formatOdds(homeOutcome.price) : 'N/A'}</td>
+                        <td class="odds-value ${isAwayFavorite ? 'favorite-odds' : 'underdog-odds'}">${awayOutcome ? awayOutcome.price.toFixed(2) : 'N/A'}</td>
+                        <td class="odds-value ${isHomeFavorite ? 'favorite-odds' : 'underdog-odds'}">${homeOutcome ? homeOutcome.price.toFixed(2) : 'N/A'}</td>
                     `;
                 } else {
                     row.innerHTML = `
@@ -264,7 +320,14 @@
         }
         
         // Initialize page
-        updateWeekInfo();
+        // Set default week to current week if available
+        const now = new Date();
+        const seasonStart = new Date(2024, 8, 5); // September 5, 2024
+        const weeksSinceStart = Math.floor((now - seasonStart) / (7 * 24 * 60 * 60 * 1000));
+        
+        if (weeksSinceStart >= 0 && weeksSinceStart < 18) {
+            document.getElementById('weekSelect').value = weeksSinceStart + 1;
+        }
     </script>
 </body>
 </html>
