@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFL Moneyline Odds</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .nfl-logo {
+            width: 200px;
+            height: auto;
+            margin-bottom: 10px;
+        }
+        
+        .week-info {
+            font-size: 24px;
+            font-weight: bold;
+            color: #013369;
+            margin-bottom: 20px;
+        }
+        
+        .button-container {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .fetch-button {
+            background-color: #013369;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .fetch-button:hover {
+            background-color: #d50a0a;
+        }
+        
+        .fetch-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .loading {
+            text-align: center;
+            margin: 20px 0;
+            font-style: italic;
+            color: #666;
+        }
+        
+        .odds-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: none;
+        }
+        
+        .odds-table th {
+            background-color: #013369;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: bold;
+        }
+        
+        .odds-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .odds-table tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .team-name {
+            font-weight: bold;
+        }
+        
+        .odds-value {
+            font-family: monospace;
+            font-size: 16px;
+        }
+        
+        .positive-odds {
+            color: #28a745;
+        }
+        
+        .negative-odds {
+            color: #dc3545;
+        }
+        
+        .error-message {
+            color: #dc3545;
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8d7da;
+            border-radius: 5px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <img src="https://upload.wikimedia.org/wikipedia/en/a/a2/National_Football_League_logo.svg" alt="NFL Logo" class="nfl-logo">
+        <div class="week-info" id="weekInfo">NFL Week Odds</div>
+    </div>
+    
+    <div class="button-container">
+        <button class="fetch-button" onclick="fetchOdds()" id="fetchButton">Get odds for Sam Minou</button>
+    </div>
+    
+    <div class="loading" id="loading" style="display: none;">Loading odds data...</div>
+    
+    <div class="error-message" id="errorMessage"></div>
+    
+    <table class="odds-table" id="oddsTable">
+        <thead>
+            <tr>
+                <th>Game Time</th>
+                <th>Away Team</th>
+                <th>Home Team</th>
+                <th>Away Odds</th>
+                <th>Home Odds</th>
+            </tr>
+        </thead>
+        <tbody id="oddsTableBody">
+        </tbody>
+    </table>
+
+    <script>
+        const API_KEY = '9399dc42456ae6ea75d61d12d71cae48';
+        const API_URL = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds';
+        
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                timeZoneName: 'short'
+            });
+        }
+        
+        function formatOdds(price) {
+            if (price > 0) {
+                return `+${price}`;
+            }
+            return price.toString();
+        }
+        
+        function getWeekInfo() {
+            const now = new Date();
+            const startOfSeason = new Date(2024, 8, 5); // September 5, 2024 (approximate start)
+            const weeksSinceStart = Math.floor((now - startOfSeason) / (7 * 24 * 60 * 60 * 1000));
+            
+            if (weeksSinceStart < 0) {
+                return "Pre-season";
+            } else if (weeksSinceStart <= 18) {
+                return `Week ${weeksSinceStart + 1}`;
+            } else {
+                return "Post-season";
+            }
+        }
+        
+        function updateWeekInfo() {
+            document.getElementById('weekInfo').textContent = `NFL ${getWeekInfo()} Odds`;
+        }
+        
+        async function fetchOdds() {
+            const button = document.getElementById('fetchButton');
+            const loading = document.getElementById('loading');
+            const table = document.getElementById('oddsTable');
+            const errorMessage = document.getElementById('errorMessage');
+            
+            // Reset display
+            button.disabled = true;
+            loading.style.display = 'block';
+            table.style.display = 'none';
+            errorMessage.style.display = 'none';
+            
+            try {
+                const response = await fetch(`${API_URL}?regions=us&markets=h2h&apiKey=${API_KEY}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.length === 0) {
+                    throw new Error('No games found for this week');
+                }
+                
+                displayOdds(data);
+                
+            } catch (error) {
+                console.error('Error fetching odds:', error);
+                errorMessage.textContent = `Error: ${error.message}`;
+                errorMessage.style.display = 'block';
+            } finally {
+                button.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+        
+        function displayOdds(games) {
+            const tableBody = document.getElementById('oddsTableBody');
+            const table = document.getElementById('oddsTable');
+            
+            tableBody.innerHTML = '';
+            
+            games.forEach(game => {
+                const row = document.createElement('tr');
+                
+                // Find moneyline market
+                const moneylineMarket = game.bookmakers?.[0]?.markets?.find(market => market.key === 'h2h');
+                
+                if (moneylineMarket) {
+                    const awayOutcome = moneylineMarket.outcomes.find(outcome => outcome.name === game.away_team);
+                    const homeOutcome = moneylineMarket.outcomes.find(outcome => outcome.name === game.home_team);
+                    
+                    row.innerHTML = `
+                        <td>${formatDate(game.commence_time)}</td>
+                        <td class="team-name">${game.away_team}</td>
+                        <td class="team-name">${game.home_team}</td>
+                        <td class="odds-value ${awayOutcome?.price > 0 ? 'positive-odds' : 'negative-odds'}">${awayOutcome ? formatOdds(awayOutcome.price) : 'N/A'}</td>
+                        <td class="odds-value ${homeOutcome?.price > 0 ? 'positive-odds' : 'negative-odds'}">${homeOutcome ? formatOdds(homeOutcome.price) : 'N/A'}</td>
+                    `;
+                } else {
+                    row.innerHTML = `
+                        <td>${formatDate(game.commence_time)}</td>
+                        <td class="team-name">${game.away_team}</td>
+                        <td class="team-name">${game.home_team}</td>
+                        <td>N/A</td>
+                        <td>N/A</td>
+                    `;
+                }
+                
+                tableBody.appendChild(row);
+            });
+            
+            table.style.display = 'table';
+        }
+        
+        // Initialize page
+        updateWeekInfo();
+    </script>
+</body>
+</html>
