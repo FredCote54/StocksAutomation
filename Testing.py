@@ -469,7 +469,7 @@ def read_and_filter_stocks(expiration_date, market_cap_threshold=2e9, last_sale_
 
     df_cleaned = df_cleaned[pd.to_numeric(df_cleaned["bidPrice"], errors="coerce") != 0]
 
-    df_cleaned = df_cleaned[(pd.to_numeric(df_cleaned["askPrice"], errors="coerce") / pd.to_numeric(df_cleaned["bidPrice"], errors="coerce")) < 1.5]
+    df_cleaned = df_cleaned[(pd.to_numeric(df_cleaned["askPrice"], errors="coerce") / pd.to_numeric(df_cleaned["bidPrice"], errors="coerce")) < 1.35]
 
     print(f"Remaining rows after removing options that do not meet criteria: {len(df_cleaned)}")
 
