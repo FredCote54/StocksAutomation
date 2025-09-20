@@ -21,9 +21,9 @@ from tqdm import tqdm
 ####################        CHOOSE PARAMETERS       #########################
 #############################################################################
 
-options_date = '2025-09-19'
+options_date = '2025-10-17'
 
-RUN_download_stocks = True
+RUN_download_stocks = False
 RUN_filter_stocks = True
 RUN_beautify = True
 RUN_testing = False
